@@ -1,31 +1,11 @@
-provider "aws" {
-  region = local.region
+data "aws_availability_zones" "available" {
+  state = "available"
 }
-
-data "aws_availability_zones" "available" {}
-
-locals {
-  region = "eu-west-1"
-  name   = "ex-${basename(path.cwd)}"
-
-  vpc_cidr = "10.0.0.0/16"
-  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
-
-  container_name = "ecs-sample"
-  container_port = 80
-
-  tags = {
-    Name       = local.name
-    Example    = local.name
-    Repository = "https://github.com/terraform-aws-modules/terraform-aws-ecs"
-  }
-}
-
 
 module "ecs_cluster" {
   source  = "terraform-aws-modules/ecs/aws"
 
-  cluster_name = local.name
+  cluster_name = var.name
 
   # Capacity provider - autoscaling groups
   default_capacity_provider_use_fargate = false
@@ -65,7 +45,7 @@ module "ecs_cluster" {
     }
   }
 
-  tags = local.tags
+  tags = var.tags
 }
 
 
@@ -83,9 +63,9 @@ module "autoscaling" {
         #!/bin/bash
 
         cat <<'EOF' >> /etc/ecs/ecs.config
-        ECS_CLUSTER=${local.name}
+        ECS_CLUSTER=${var.name}
         ECS_LOGLEVEL=debug
-        ECS_CONTAINER_INSTANCE_TAGS=${jsonencode(local.tags)}
+        ECS_CONTAINER_INSTANCE_TAGS=${jsonencode(var.tags)}
         ECS_ENABLE_TASK_IAM_ROLE=true
         EOF
       EOT
@@ -116,9 +96,9 @@ module "autoscaling" {
         #!/bin/bash
 
         cat <<'EOF' >> /etc/ecs/ecs.config
-        ECS_CLUSTER=${local.name}
+        ECS_CLUSTER=${var.name}
         ECS_LOGLEVEL=debug
-        ECS_CONTAINER_INSTANCE_TAGS=${jsonencode(local.tags)}
+        ECS_CONTAINER_INSTANCE_TAGS=${jsonencode(var.tags)}
         ECS_ENABLE_TASK_IAM_ROLE=true
         ECS_ENABLE_SPOT_INSTANCE_DRAINING=true
         EOF
@@ -126,7 +106,7 @@ module "autoscaling" {
     }
   }
 
-  name = "${local.name}-${each.key}"
+  name = "${var.name}-${each.key}"
 
   image_id      = "public.ecr.aws/aws-containers/ecsdemo-frontend:776fd50"
   instance_type = each.value.instance_type
@@ -136,8 +116,8 @@ module "autoscaling" {
   ignore_desired_capacity_changes = true
 
   create_iam_instance_profile = true
-  iam_role_name               = local.name
-  iam_role_description        = "ECS role for ${local.name}"
+  iam_role_name               = var.name
+  iam_role_description        = "ECS role for ${var.name}"
   iam_role_policies = {
     AmazonEC2ContainerServiceforEC2Role = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
     AmazonSSMManagedInstanceCore        = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
@@ -149,61 +129,39 @@ module "autoscaling" {
   max_size            = 5
   desired_capacity    = 2
 
-  # https://github.com/hashicorp/terraform-provider-aws/issues/12582
   autoscaling_group_tags = {
     AmazonECSManaged = true
   }
 
-  # Required for  managed_termination_protection = "ENABLED"
   protect_from_scale_in = true
 
   # Spot instances
   use_mixed_instances_policy = each.value.use_mixed_instances_policy
   mixed_instances_policy     = each.value.mixed_instances_policy
 
-  tags = local.tags
+  tags = var.tags
 }
 
 module "autoscaling_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
-  name        = local.name
+  name        = var.name
   description = "Autoscaling group security group"
   vpc_id      = module.vpc.vpc_id
 
-  # computed_ingress_with_source_security_group_id = [
-  #   {
-  #     rule                     = "http-80-tcp"
-  #     source_security_group_id = module.alb.security_group_id
-  #   }
-  # ]
-  # number_of_computed_ingress_with_source_security_group_id = 1
-
   egress_rules = ["all-all"]
 
-  tags = local.tags
+  tags = var.tags
 }
 
-module "vpc" {  # computed_ingress_with_source_security_group_id = [
-  #   {
-  #     rule                     = "http-80-tcp"
-  #     source_security_group_id = module.alb.security_group_id
-  #   }
-  # ]
-  # num
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = local.name
-  cidr = local.vpc_cidr
-
-  azs             = local.azs
-  private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
-  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
-
+module "vpc" {
+  source             = "github.com/terraform-aws-modules/terraform-aws-vpc"
+  name               = "vpc"
+  cidr               = var.cidr_block
+  azs                = slice(data.aws_availability_zones.available.names, 0, 1)
+  public_subnets     = [cidrsubnet(var.cidr_block, 8, 3), cidrsubnet(var.cidr_block, 8, 4), cidrsubnet(var.cidr_block, 8, 5)]
+  private_subnets    = [cidrsubnet(var.cidr_block, 8, 0), cidrsubnet(var.cidr_block, 8, 1), cidrsubnet(var.cidr_block, 8, 2)]
   enable_nat_gateway = true
   single_nat_gateway = true
-
-  tags = local.tags
 }

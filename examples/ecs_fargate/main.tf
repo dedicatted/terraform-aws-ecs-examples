@@ -10,14 +10,6 @@ module "vpc" {
   private_subnets    = [cidrsubnet(var.cidr_block, 8, 0), cidrsubnet(var.cidr_block, 8, 1), cidrsubnet(var.cidr_block, 8, 2)]
   enable_nat_gateway = true
   single_nat_gateway = true
-  public_subnet_tags = {
-    "kubernetes.io/cluster/demo-cluster" = "shared"
-    "kubernetes.io/role/elb"             = 1
-  }
-  private_subnet_tags = {
-    "kubernetes.io/cluster/demo-cluster" = "shared"
-    "kubernetes.io/role/internal-elb"    = 1
-  }
 }
 module "ecs" {
   source = "terraform-aws-modules/ecs/aws"
