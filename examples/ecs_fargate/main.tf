@@ -21,7 +21,6 @@ module "vpc" {
 }
 module "ecs" {
   source = "terraform-aws-modules/ecs/aws"
-  default_capacity_provider_use_fargate = false
 
   cluster_name = "ecs-integrated"
 
